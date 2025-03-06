@@ -1,0 +1,272 @@
+{
+    "definition": {
+        "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+        "contentVersion": "1.0.0.0",
+        "triggers": {
+            "When_a_blob_is_added_or_modified_(properties_only)_(V2)": {
+                "recurrence": {
+                    "interval": 1,
+                    "frequency": "Minute",
+                    "timeZone": "Israel Standard Time",
+                    "startTime": "2025-03-02T12:30:00Z"
+                },
+                "evaluatedRecurrence": {
+                    "interval": 1,
+                    "frequency": "Minute",
+                    "timeZone": "Israel Standard Time",
+                    "startTime": "2025-03-02T12:30:00Z"
+                },
+                "splitOn": "@triggerBody()",
+                "type": "ApiConnection",
+                "inputs": {
+                    "host": {
+                        "connection": {
+                            "name": "@parameters('$connections')['azureblob']['connectionId']"
+                        }
+                    },
+                    "method": "get",
+                    "path": "/v2/datasets/@{encodeURIComponent(encodeURIComponent('https://',parameters('StorageAccountName'),'.blob.core.windows.net/'))}/triggers/batch/onupdatedfile",
+                    "queries": {
+                        "folderId": "@parameters('ContainerName')",
+                        "maxFileCount": 10,
+                        "checkBothCreatedAndModifiedDateTime": false
+                    }
+                }
+            }
+        },
+        "actions": {
+            "AVI_get_access_token": {
+                "runAfter": {},
+                "type": "Http",
+                "inputs": {
+                    "uri": "https://management.azure.com/subscriptions/@{parameters('SubscriptionID')}/resourceGroups/@{parameters('RGName')}/providers/Microsoft.VideoIndexer/accounts/@{parameters('AVIAccountName')}/generateAccessToken?api-version=2024-01-01",
+                    "method": "POST",
+                    "headers": {
+                        "Content-Type": "application/json"
+                    },
+                    "body": {
+                        "permissionType": "Contributor",
+                        "scope": "Account"
+                    },
+                    "authentication": {
+                        "type": "ManagedServiceIdentity"
+                    }
+                },
+                "runtimeConfiguration": {
+                    "contentTransfer": {
+                        "transferMode": "Chunked"
+                    }
+                }
+            },
+            "Set_variable_AVI_Access_Token": {
+                "runAfter": {
+                    "Initialize_variable_AVI_Access_Token": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "SetVariable",
+                "inputs": {
+                    "name": "accessToken",
+                    "value": "@body('AVI_get_access_token')['accessToken']"
+                }
+            },
+            "Initialize_variable_AVI_Access_Token": {
+                "runAfter": {
+                    "AVI_get_access_token": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "InitializeVariable",
+                "inputs": {
+                    "variables": [
+                        {
+                            "name": "accessToken",
+                            "type": "string"
+                        }
+                    ]
+                }
+            },
+            "Initialize_variable_video_ID": {
+                "runAfter": {
+                    "Set_variable_AVI_Access_Token": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "InitializeVariable",
+                "inputs": {
+                    "variables": [
+                        {
+                            "name": "videoID",
+                            "type": "string"
+                        }
+                    ]
+                }
+            },
+            "initialized_var_redacted_file_name": {
+                "runAfter": {
+                    "Initialize_variable_video_ID": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "InitializeVariable",
+                "inputs": {
+                    "variables": [
+                        {
+                            "name": "redactedFileName",
+                            "type": "string"
+                        }
+                    ]
+                }
+            },
+            "Create_SAS_URI_by_path_(V2)": {
+                "runAfter": {
+                    "initialized_var_redacted_file_name": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "ApiConnection",
+                "inputs": {
+                    "host": {
+                        "connection": {
+                            "name": "@parameters('$connections')['azureblob-1']['connectionId']"
+                        }
+                    },
+                    "method": "post",
+                    "body": {
+                        "Permissions": "Read"
+                    },
+                    "path": "/v2/datasets/@{encodeURIComponent(parameters('StorageAccountName'))}/CreateSharedLinkByPath",
+                    "queries": {
+                        "path": "@triggerBody()?['Path']"
+                    }
+                }
+            },
+            "Upload_video_and_index": {
+                "runAfter": {
+                    "Create_SAS_URI_by_path_(V2)": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "ApiConnection",
+                "inputs": {
+                    "host": {
+                        "connection": {
+                            "name": "@parameters('$connections')['videoindexer-v2-1']['connectionId']"
+                        }
+                    },
+                    "method": "post",
+                    "path": "/@{encodeURIComponent(parameters('LocationAVI'))}/Accounts/@{encodeURIComponent(parameters('AVIAccountID'))}/Videos",
+                    "queries": {
+                        "accessToken": "@variables('accessToken')",
+                        "name": "@triggerBody()?['Name']",
+                        "videoUrl": "@body('Create_SAS_URI_by_path_(V2)')?['WebUrl']"
+                    }
+                }
+            },
+            "Set_variable_video_ID": {
+                "runAfter": {
+                    "Upload_video_and_index": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "SetVariable",
+                "inputs": {
+                    "name": "videoID",
+                    "value": "@body('Upload_video_and_index')?['id']"
+                }
+            },
+            "Set_variable_redacted_file_name": {
+                "runAfter": {
+                    "Set_variable_video_ID": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "SetVariable",
+                "inputs": {
+                    "name": "redactedFileName",
+                    "value": "redacted@{triggerBody()?['Name']}"
+                }
+            },
+            "Redact_Faces_API": {
+                "runAfter": {
+                    "Set_variable_redacted_file_name": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "Http",
+                "inputs": {
+                    "uri": "https://api.videoindexer.ai/@{parameters('LocationAVI')}/Accounts/@{parameters('AVIAccountID')}/Videos/@{variables('videoID')}/redact?name=@{variables('redactedFileName')}&accessToken=@{variables('accessToken')}",
+                    "method": "POST",
+                    "body": "\n    \"faces\": {\n        \"blurringKind\": \"HighBlur\",\n    }\n\n"
+                },
+                "runtimeConfiguration": {
+                    "contentTransfer": {
+                        "transferMode": "Chunked"
+                    }
+                }
+            }
+        },
+        "outputs": {},
+        "parameters": {
+            "AVIAccountID": {
+                "defaultValue": "8b459a2e-d4d9-481a-9cbb-758953b9385b",
+                "type": "String"
+            },
+            "SubscriptionID": {
+                "defaultValue": "e7ff6db9-a379-4f16-823b-0a2bdde39ef4",
+                "type": "String"
+            },
+            "StorageAccountName": {
+                "defaultValue": "stavidigital",
+                "type": "String"
+            },
+            "ContainerName": {
+                "defaultValue": "container",
+                "type": "String"
+            },
+            "RGName": {
+                "defaultValue": "rg-avi",
+                "type": "String"
+            },
+            "AVIAccountName": {
+                "defaultValue": "avi-final",
+                "type": "String"
+            },
+            "LocationAVI": {
+                "defaultValue": "westeurope",
+                "type": "String"
+            },
+            "$connections": {
+                "type": "Object",
+                "defaultValue": {}
+            }
+        }
+    },
+    "parameters": {
+        "$connections": {
+            "type": "Object",
+            "value": {
+                "azureblob": {
+                    "id": "/subscriptions/e7ff6db9-a379-4f16-823b-0a2bdde39ef4/providers/Microsoft.Web/locations/westeurope/managedApis/azureblob",
+                    "connectionId": "/subscriptions/e7ff6db9-a379-4f16-823b-0a2bdde39ef4/resourceGroups/rg-avi/providers/Microsoft.Web/connections/azureblob-1",
+                    "connectionName": "azureblob-1",
+                    "connectionProperties": {
+                        "authentication": {
+                            "type": "ManagedServiceIdentity"
+                        }
+                    }
+                },
+                "azureblob-1": {
+                    "id": "/subscriptions/e7ff6db9-a379-4f16-823b-0a2bdde39ef4/providers/Microsoft.Web/locations/westeurope/managedApis/azureblob",
+                    "connectionId": "/subscriptions/e7ff6db9-a379-4f16-823b-0a2bdde39ef4/resourceGroups/rg-avi/providers/Microsoft.Web/connections/azureblob-2",
+                    "connectionName": "azureblob-2"
+                },
+                "videoindexer-v2-1": {
+                    "id": "/subscriptions/e7ff6db9-a379-4f16-823b-0a2bdde39ef4/providers/Microsoft.Web/locations/westeurope/managedApis/videoindexer-v2",
+                    "connectionId": "/subscriptions/e7ff6db9-a379-4f16-823b-0a2bdde39ef4/resourceGroups/rg-avi/providers/Microsoft.Web/connections/videoindexer-v2-1",
+                    "connectionName": "videoindexer-v2-1"
+                }
+            }
+        }
+    }
+}
