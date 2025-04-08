@@ -35,92 +35,9 @@
             }
         },
         "actions": {
-            "AVI_get_access_token": {
-                "runAfter": {},
-                "type": "Http",
-                "inputs": {
-                    "uri": "https://management.azure.com/subscriptions/@{parameters('SubscriptionID')}/resourceGroups/@{parameters('RGName')}/providers/Microsoft.VideoIndexer/accounts/@{parameters('AVIAccountName')}/generateAccessToken?api-version=2024-01-01",
-                    "method": "POST",
-                    "headers": {
-                        "Content-Type": "application/json"
-                    },
-                    "body": {
-                        "permissionType": "Contributor",
-                        "scope": "Account"
-                    },
-                    "authentication": {
-                        "type": "ManagedServiceIdentity"
-                    }
-                },
-                "runtimeConfiguration": {
-                    "contentTransfer": {
-                        "transferMode": "Chunked"
-                    }
-                }
-            },
-            "Set_variable_AVI_Access_Token": {
-                "runAfter": {
-                    "Initialize_variable_AVI_Access_Token": [
-                        "Succeeded"
-                    ]
-                },
-                "type": "SetVariable",
-                "inputs": {
-                    "name": "accessToken",
-                    "value": "@body('AVI_get_access_token')['accessToken']"
-                }
-            },
-            "Initialize_variable_AVI_Access_Token": {
-                "runAfter": {
-                    "AVI_get_access_token": [
-                        "Succeeded"
-                    ]
-                },
-                "type": "InitializeVariable",
-                "inputs": {
-                    "variables": [
-                        {
-                            "name": "accessToken",
-                            "type": "string"
-                        }
-                    ]
-                }
-            },
-            "Initialize_variable_video_ID": {
-                "runAfter": {
-                    "Set_variable_AVI_Access_Token": [
-                        "Succeeded"
-                    ]
-                },
-                "type": "InitializeVariable",
-                "inputs": {
-                    "variables": [
-                        {
-                            "name": "videoID",
-                            "type": "string"
-                        }
-                    ]
-                }
-            },
-            "initialized_var_redacted_file_name": {
-                "runAfter": {
-                    "Initialize_variable_video_ID": [
-                        "Succeeded"
-                    ]
-                },
-                "type": "InitializeVariable",
-                "inputs": {
-                    "variables": [
-                        {
-                            "name": "redactedFileName",
-                            "type": "string"
-                        }
-                    ]
-                }
-            },
             "Create_SAS_URI_by_path_(V2)": {
                 "runAfter": {
-                    "initialized_var_redacted_file_name": [
+                    "initialized_varibable_RedactAccessToken": [
                         "Succeeded"
                     ]
                 },
@@ -157,52 +74,213 @@
                     "method": "post",
                     "path": "/@{encodeURIComponent(parameters('LocationAVI'))}/Accounts/@{encodeURIComponent(parameters('AVIAccountID'))}/Videos",
                     "queries": {
-                        "accessToken": "@variables('accessToken')",
+                        "accessToken": "@body('Parse_JSON')?['accessToken']",
                         "name": "@triggerBody()?['Name']",
                         "videoUrl": "@body('Create_SAS_URI_by_path_(V2)')?['WebUrl']"
                     }
                 }
             },
-            "Set_variable_video_ID": {
-                "runAfter": {
-                    "Upload_video_and_index": [
-                        "Succeeded"
-                    ]
-                },
-                "type": "SetVariable",
-                "inputs": {
-                    "name": "videoID",
-                    "value": "@body('Upload_video_and_index')?['id']"
-                }
-            },
-            "Set_variable_redacted_file_name": {
-                "runAfter": {
-                    "Set_variable_video_ID": [
-                        "Succeeded"
-                    ]
-                },
-                "type": "SetVariable",
-                "inputs": {
-                    "name": "redactedFileName",
-                    "value": "redacted@{triggerBody()?['Name']}"
-                }
-            },
             "Redact_Faces_API": {
                 "runAfter": {
-                    "Set_variable_redacted_file_name": [
+                    "Delay": [
                         "Succeeded"
                     ]
                 },
                 "type": "Http",
                 "inputs": {
-                    "uri": "https://api.videoindexer.ai/@{parameters('LocationAVI')}/Accounts/@{parameters('AVIAccountID')}/Videos/@{variables('videoID')}/redact?name=@{variables('redactedFileName')}&accessToken=@{variables('accessToken')}",
+                    "uri": "https://api.videoindexer.ai/@{parameters('LocationAVI')}/Accounts/@{parameters('AVIAccountID')}/Videos/@{variables('videoID')}/redact?name=@{variables('redactedFileName')}",
                     "method": "POST",
-                    "body": "\n    \"faces\": {\n        \"blurringKind\": \"HighBlur\",\n    }\n\n"
+                    "headers": {
+                        "Content-Type": "application/json",
+                        "Authorization": "Bearer @{body('Parse_JSON')?['accessToken']}"
+                    },
+                    "body": {
+                        "faces": {
+                            "blurringKind": "HighBlur"
+                        }
+                    }
                 },
                 "runtimeConfiguration": {
                     "contentTransfer": {
                         "transferMode": "Chunked"
                     }
+                }
+            },
+            "Delay": {
+                "runAfter": {
+                    "initialized_var_redacted_file_name": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "Wait",
+                "inputs": {
+                    "interval": {
+                        "count": 4,
+                        "unit": "Minute"
+                    }
+                }
+            },
+            "AVI_get_access_token-for_redaction": {
+                "runAfter": {},
+                "type": "Http",
+                "inputs": {
+                    "uri": "https://management.azure.com/subscriptions/@{parameters('SubscriptionID')}/resourceGroups/@{parameters('RGName')}/providers/Microsoft.VideoIndexer/accounts/@{parameters('AVIAccountName')}/generateAccessToken?api-version=2024-01-01",
+                    "method": "POST",
+                    "headers": {
+                        "Content-Type": "application/json"
+                    },
+                    "body": {
+                        "permissionType": "Contributor",
+                        "scope": "Account"
+                    },
+                    "authentication": {
+                        "type": "ManagedServiceIdentity"
+                    }
+                },
+                "runtimeConfiguration": {
+                    "contentTransfer": {
+                        "transferMode": "Chunked"
+                    }
+                }
+            },
+            "Parse_JSON": {
+                "runAfter": {
+                    "AVI_get_access_token-for_redaction": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "ParseJson",
+                "inputs": {
+                    "content": "@body('AVI_get_access_token-for_redaction')",
+                    "schema": {
+                        "type": "object",
+                        "properties": {
+                            "statusCode": {
+                                "type": "integer"
+                            },
+                            "headers": {
+                                "type": "object",
+                                "properties": {
+                                    "Cache-Control": {
+                                        "type": "string"
+                                    },
+                                    "Pragma": {
+                                        "type": "string"
+                                    },
+                                    "Vary": {
+                                        "type": "string"
+                                    },
+                                    "x-ms-operation-identifier": {
+                                        "type": "string"
+                                    },
+                                    "Access-Control-Allow-Credentials": {
+                                        "type": "string"
+                                    },
+                                    "x-ms-ratelimit-remaining-subscription-writes": {
+                                        "type": "string"
+                                    },
+                                    "x-ms-providerhub-traffic": {
+                                        "type": "string"
+                                    },
+                                    "x-ms-request-id": {
+                                        "type": "string"
+                                    },
+                                    "X-Content-Type-Options": {
+                                        "type": "string"
+                                    },
+                                    "Strict-Transport-Security": {
+                                        "type": "string"
+                                    },
+                                    "x-ms-correlation-request-id": {
+                                        "type": "string"
+                                    },
+                                    "x-ms-ratelimit-remaining-subscription-global-writes": {
+                                        "type": "string"
+                                    },
+                                    "x-ms-routing-request-id": {
+                                        "type": "string"
+                                    },
+                                    "X-Cache": {
+                                        "type": "string"
+                                    },
+                                    "X-MSEdge-Ref": {
+                                        "type": "string"
+                                    },
+                                    "Date": {
+                                        "type": "string"
+                                    },
+                                    "Content-Length": {
+                                        "type": "string"
+                                    },
+                                    "Content-Type": {
+                                        "type": "string"
+                                    },
+                                    "Expires": {
+                                        "type": "string"
+                                    }
+                                }
+                            },
+                            "body": {
+                                "type": "object",
+                                "properties": {
+                                    "accessToken": {
+                                        "type": "string"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "initialized_varibable_RedactAccessToken": {
+                "runAfter": {
+                    "Parse_JSON": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "InitializeVariable",
+                "inputs": {
+                    "variables": [
+                        {
+                            "name": "RedactAccessToken",
+                            "type": "string",
+                            "value": "@body('Parse_JSON')?['body']?['accessToken']"
+                        }
+                    ]
+                }
+            },
+            "Initialize_variable_video_ID": {
+                "runAfter": {
+                    "Upload_video_and_index": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "InitializeVariable",
+                "inputs": {
+                    "variables": [
+                        {
+                            "name": "videoID",
+                            "type": "string",
+                            "value": "@body('Upload_video_and_index')?['id']"
+                        }
+                    ]
+                }
+            },
+            "initialized_var_redacted_file_name": {
+                "runAfter": {
+                    "Initialize_variable_video_ID": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "InitializeVariable",
+                "inputs": {
+                    "variables": [
+                        {
+                            "name": "redactedFileName",
+                            "type": "string",
+                            "value": "redacted@{triggerBody()?['Name']} "
+                        }
+                    ]
                 }
             }
         },

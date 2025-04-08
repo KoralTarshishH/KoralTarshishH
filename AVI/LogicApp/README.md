@@ -53,7 +53,8 @@ in case you don't use the built-in Upload video and index action, you'll need to
 
 https://github.com/MicrosoftDocs/azure-video-indexer/blob/main/azure-video-indexer/face-redaction-with-api.md --->  Face redaction API
 https://learn.microsoft.com/en-us/azure/azure-video-indexer/avi-support-matrix --->  AVI service limitations
-https://api-portal.videoindexer.ai/  --->  AVI developer portal to get the 
+https://api-portal.videoindexer.ai/  --->  AVI developer portal to get the developer key
+https://learn.microsoft.com/en-us/rest/api/videoindexer/generate/access-token?view=rest-videoindexer-2025-01-01&tabs=HTTP  ---> Generate AVI access token API
 
 
 
